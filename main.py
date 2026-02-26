@@ -3,6 +3,7 @@ import argparse
 from load_images import *
 from load_label import *
 from extraction_preprocess import *
+from extraction_preprocess2 import *
 from training import *
 
 ##Note that the whole process will take a long time... please be patient
@@ -18,34 +19,44 @@ def main(config):
     # Load Images
     print('\n ------ Croping Images ------')
     #Can comment this out after completed on the dataset specified and intend to try on another expression_type
-    crop_images(dataset_name) 
+    #crop_images(dataset_name) 
     print("\n ------ Loading Images ------")
     images, subjects, subjectsVideos = load_images(dataset_name)
+    
     #images = pickle.load( open( dataset_name + "_images_crop.pkl", "rb" ) )
     
     # Load Ground Truth Label
     print('\n ------ Loading Excel ------')
     codeFinal = load_excel(dataset_name)
     print('\n ------ Loading Ground Truth From Excel ------')
+    
+    #depends on expression type items below would be macro or micro
     final_images, final_videos, final_subjects, final_samples = load_gt(dataset_name, expression_type, images, subjectsVideos, subjects, codeFinal) 
+    
+   
     print('\n ------ Computing k ------')
     k = cal_k(dataset_name, expression_type, final_samples)
-    
+
     # Feature Extraction & Pre-processing
     print('\n ------ Feature Extraction & Pre-processing ------')
-    dataset = extract_preprocess(final_images, k)
+    dataset1 = extract_preprocess(final_images, k)
+    dataset2 = extract_preprocess2(final_images, k)
     
     # Pseudo-labeling
     print('\n ------ Pseudo-Labeling ------')
     pseudo_y = pseudo_labeling(final_images, final_samples, k)
+   
     
     # LOSO
-    print('\n ------ Leave one Subject Out ------')
-    X, y, groupsLabel = loso(dataset, pseudo_y, final_images, final_samples, k)
-    
+
+    X1, y1, groupsLabel1 = loso(dataset1, pseudo_y, final_images, final_samples, k)
+    X2, y2, groupsLabel2 = loso(dataset2, pseudo_y, final_images, final_samples, k)
+
     # Model Training & Evaluation
     print('\n ------ SOFTNet Training & Testing ------')
-    TP, FP, FN, metric_fn = training(X, y, groupsLabel, dataset_name, expression_type, final_samples, k, dataset, train, show_plot)
+    
+    TP, FP, FN, metric_fn = training(X1, y1, groupsLabel1,X2, y2, groupsLabel2, dataset_name, expression_type, final_samples, k, dataset1, train, show_plot)
+    
     final_evaluation(TP, FP, FN, metric_fn)
 
 if __name__ == '__main__':
@@ -56,7 +67,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_name', type=str, default='CASME_sq') # Specify CASME_sq or SAMMLV only
     parser.add_argument('--expression_type', type=str, default='micro-expression') # Specify micro-expression or macro-expression only
     parser.add_argument('--train', type=bool, default=False) #Train or use pre-trained weight for prediction
-    parser.add_argument('--show_plot', type=bool, default=False)
+    parser.add_argument('--show_plot', type=bool, default=False )
     
     config = parser.parse_args()
 

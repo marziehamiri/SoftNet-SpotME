@@ -12,33 +12,39 @@ from scipy.signal import find_peaks
 from Utils.mean_average_precision.mean_average_precision import MeanAveragePrecision2d
 random.seed(1)
 
-def pseudo_labeling(final_images, final_samples, k):
+
+#succesful pseudo_labeling threshold modifying 
+def pseudo_labeling(final_images, final_samples, k, iou_threshold=0.2):
     pseudo_y = []
     video_count = 0 
     
     for subject in final_samples:
         for video in subject:
-            samples_arr = []
-            if (len(video)==0):
-                pseudo_y.append([0 for i in range(len(final_images[video_count])-k)]) #Last k frames are ignored
-            else:
-                pseudo_y_each = [0]*(len(final_images[video_count])-k)
-                for ME in video:
-                    samples_arr.append(np.arange(ME[0]+1, ME[1]+1))
-                for ground_truth_arr in samples_arr: 
-                    for index in range(len(pseudo_y_each)):
-                        pseudo_arr = np.arange(index, index+k) 
-                        # Equivalent to if IoU>0 then y=1, else y=0
-                        if (pseudo_y_each[index] < len(np.intersect1d(pseudo_arr, ground_truth_arr))/len(np.union1d(pseudo_arr, ground_truth_arr))):
-                            pseudo_y_each[index] = 1 
-                pseudo_y.append(pseudo_y_each)
-            video_count+=1
+            num_frames = len(final_images[video_count])
+            pseudo_y_each = np.zeros(num_frames - k, dtype=int)
+
+            if len(video) > 0:
+                
+                gt_intervals = [np.arange(ME[0]+1, min(ME[1]+1, num_frames)) for ME in video]
+
+                
+                for idx in range(num_frames - k):
+                    window = np.arange(idx, idx + k)
+                    
+                    for gt in gt_intervals:
+                        iou = len(np.intersect1d(window, gt)) / len(np.union1d(window, gt))
+                        if iou > iou_threshold:
+                            pseudo_y_each[idx] = 1
+                            break  
+
+            pseudo_y.append(pseudo_y_each)
+            video_count += 1
     
-    # Integrate all videos into one dataset
-    pseudo_y = [y for x in pseudo_y for y in x]
+    pseudo_y = np.concatenate(pseudo_y)
     print('Total frames:', len(pseudo_y))
     return pseudo_y
-    
+
+
 def loso(dataset, pseudo_y, final_images, final_samples, k):
     #To split the dataset by subjects
     y = np.array(pseudo_y)
@@ -127,34 +133,118 @@ def SOFTNet():
     model.compile(loss="mse", optimizer=sgd, metrics=[tf.keras.metrics.MeanAbsoluteError()])
     return model
 
-def spotting(result, total_gt, final_samples, subject_count, dataset, k, metric_fn, p, show_plot):
+
+
+#micro successful filtering
+def smart_micro_filter_confidence(predictions, max_gap=10):
+    for p in predictions:
+        p[0] = int(p[0])  # start
+        p[2] = int(p[2])  # end
+    if len(predictions) == 0:
+        return np.array([])
+
+    
+    intervals = [(p[0], p[2], p) for p in predictions]
+    intervals.sort(key=lambda x: x[0])  
+
+    result = [intervals[0][2]]  
+
+    for i in range(1, len(intervals)):
+        last = result[-1]        
+        curr = intervals[i][2]   
+
+        
+        if curr[0] <= last[2]:
+            
+            if curr[-1] > last[-1]:
+                result[-1] = curr  
+            
+        else:
+            result.append(curr)
+
+    return np.array(result)
+
+
+
+
+def filter_by_majority_vote_custom(intervals, probs, frame_thresh=0.03, vote_ratio=0.5):
+  
+
+    valid = []
+
+    for interval in intervals:
+        s = interval[0]     # شروع بازه
+        e = interval[2]     # پایان بازه
+        s = int(s)
+        e = int(e)
+
+        window = probs[s:e]   # احتمال فریم‌های داخل بازه
+
+        num_pos = np.sum(window > frame_thresh)
+        total = e - s
+
+        # فیلتر اکثریت رأی
+        if num_pos >= vote_ratio * total:
+            valid.append(interval)
+    if len(valid) == 0:
+        valid.append(intervals[0])
+
+    return valid
+
+
+def spotting(result, total_gt, final_samples,final_samples_macro, subject_count, dataset, k, metric_fn, p, show_plot):
     prev=0
+    
     for videoIndex, video in enumerate(final_samples[subject_count-1]):
         preds = []
         gt = []
         countVideo = len([video for subject in final_samples[:subject_count-1] for video in subject])
         print('Video:', countVideo+videoIndex)
-        score_plot = np.array(result[prev:prev+len(dataset[countVideo+videoIndex])]) #Get related frames to each video
+        
+        score_plot = np.array(result[prev:prev+len(dataset[countVideo+videoIndex])]) 
         score_plot_agg = score_plot.copy()
         
-        #Score aggregation
+        # Score aggregation
         for x in range(len(score_plot[k:-k])):
             score_plot_agg[x+k] = score_plot[x:x+2*k].mean()
         score_plot_agg = score_plot_agg[k:-k]
         
-        #Plot the result to see the peaks
-        #Note for some video the ground truth samples is below frame index 0 due to the effect of aggregation, but no impact to the evaluation
         if(show_plot):
             plt.figure(figsize=(15,4))
             plt.plot(score_plot_agg) 
             plt.xlabel('Frame')
             plt.ylabel('Score')
-        threshold = score_plot_agg.mean() + p * (max(score_plot_agg) - score_plot_agg.mean()) #Moilanen threshold technique
+            
+        threshold = score_plot_agg.mean() + p * (max(score_plot_agg) - score_plot_agg.mean())
         peaks, _ = find_peaks(score_plot_agg[:,0], height=threshold[0], distance=k)
-        if(len(peaks)==0): #Occurs when no peak is detected, simply give a value to pass the exception in mean_average_precision
-            preds.append([0, 0, 0, 0, 0, 0]) 
+        
+        if(len(peaks)==0): 
+            preds.append([0, 0, 0, 0, 0, 0, 0])  
         for peak in peaks:
-            preds.append([peak-k, 0, peak+k, 0, 0, 0]) #Extend left and right side of peak by k frames
+            start = peak - k
+            end   = peak + k
+            start = max(0, start)
+            end = max(0, end)
+            #print(f"[DEBUG] video {videoIndex}: len(result)={len(result)}, start={start}, end={end}")
+           
+            #confidence = float(result[start:end,0].max())
+            confidence = float(result[start:end, 0].mean())
+            preds.append([start, 0, end, 0, 0, 0, confidence]) 
+            
+        print("preds before postprocessing")
+        print(preds)
+        
+        # Smart filter
+        #preds = smart_micro_filter(preds, max_gap=12)
+        preds = smart_micro_filter_confidence(preds, max_gap=10)
+        #preds = filter_by_majority_vote_custom(preds, result, frame_thresh=0.05, vote_ratio=0.5)
+        #preds = preds.astype(int)
+        print("preds after smart postprocessing ")
+        print(preds)
+
+        preds = np.array(preds)[:, :6]
+
+        # ground truth
         for samples in video:
             gt.append([samples[0]-k, 0, samples[1]-k, 0, 0, 0, 0])
             total_gt += 1
@@ -165,9 +255,12 @@ def spotting(result, total_gt, final_samples, subject_count, dataset, k, metric_
         if(show_plot):
             plt.show()
         prev += len(dataset[countVideo+videoIndex])
-        metric_fn.add(np.array(preds),np.array(gt)) #IoU = 0.5 according to MEGC2020 metrics
-    return preds, gt, total_gt
+        metric_fn.add(np.array(preds),np.array(gt)) 
         
+    return preds, gt, total_gt
+
+
+
 def evaluation(preds, gt, total_gt, metric_fn): #Get TP, FP, FN for final evaluation
     TP = int(sum(metric_fn.value(iou_thresholds=0.5)[0.5][0]['tp'])) 
     FP = int(sum(metric_fn.value(iou_thresholds=0.5)[0.5][0]['fp']))
@@ -175,74 +268,192 @@ def evaluation(preds, gt, total_gt, metric_fn): #Get TP, FP, FN for final evalua
     print('TP:', TP, 'FP:', FP, 'FN:', FN)
     return TP, FP, FN
 
-def training(X, y, groupsLabel, dataset_name, expression_type, final_samples, k, dataset, train, show_plot):
+def evaluation1(preds, gt, total_gt, metric_fn): #Get TP, FP, FN for final evaluation
+    TP = int(sum(metric_fn.value(iou_thresholds=0.5)[0.5][0]['tp'])) 
+    FP = int(sum(metric_fn.value(iou_thresholds=0.5)[0.5][0]['fp']))
+    FN = total_gt - TP
+    #print('TP:', TP, 'FP:', FP, 'FN:', FN)
+    return TP, FP, FN
+
+def training(X, y, groupsLabel,
+             X2, y2, groupsLabel2,
+             dataset_name, expression_type,
+             final_samples, final_samples_macro, 
+             k, dataset, train, show_plot):
+
+    print("DEBUG shapes: ", len(X), len(y), len(groupsLabel))
+
+    
+    if not (len(X) == len(y) == len(groupsLabel)):
+        print("Mismatch indices:")
+        print("extra y:", list(range(len(X), len(y))))
+        print("extra groups:", list(range(len(X), len(groupsLabel))))
+
     logo = LeaveOneGroupOut()
-    logo.get_n_splits(X, y, groupsLabel)
+    logo1 = LeaveOneGroupOut()
     subject_count = 0
-    epochs = 10
+
+    epochs = 20
     batch_size = 12
     total_gt = 0
     metric_fn = MeanAveragePrecision2d(num_classes=1)
-    p = 0.55 #From our analysis, 0.55 achieved the highest F1-Score
+    metric_fn1 = MeanAveragePrecision2d(num_classes=1)
+    p = 0.55
+
+    # face model
     model = SOFTNet()
-    weight_reset = model.get_weights() #Initial weights
-    
-    for train_index, test_index in logo.split(X, y, groupsLabel): # Leave One Subject Out
-        subject_count+=1
-        print('Subject : ' + str(subject_count))
-        
-        X_train, X_test = [X[i] for i in train_index], [X[i] for i in test_index] #Get training set
-        y_train, y_test = [y[i] for i in train_index], [y[i] for i in test_index] #Get testing set
-        
-        print('------Initializing SOFTNet-------') #To reset the model at every LOSO testing
-        
-        path = 'SOFTNet_Weights\\' + dataset_name + '\\' + expression_type + '\\s' + str(subject_count) + '.hdf5'
-        if(train):
-            #Downsampling non expression samples the dataset by 1/2 to reduce dataset bias 
-            print('Dataset Labels', Counter(y_train))
-            unique, uni_count = np.unique(y_train, return_counts=True) 
-            rem_count = int(uni_count.max()*1/2)
-            
-            
-            #Randomly remove non expression samples (With label 0) from dataset
-            rem_index = random.sample([index for index, i in enumerate(y_train) if i==0], rem_count) 
-            rem_index += (index for index, i in enumerate(y_train) if i>0)
-            rem_index.sort()
+    # eyebrow model
+    model1 = SOFTNet()
+
+    weight_reset = model.get_weights()
+    weight_reset1 = model1.get_weights()
+
+    #  LOSO
+    for train_index, test_index in logo.split(X, y, groupsLabel):
+        subject_count += 1
+        print('Subject:', subject_count)
+
+        test_subject_id = list(set(groupsLabel[i] for i in test_index))[0]
+        train_subjects = set(groupsLabel[i] for i in train_index)
+        print(f"Testing on Subject ID: {test_subject_id}")
+        print(f"Training on Subject IDs: {sorted(train_subjects)}")
+
+        # -----------------------------------------------------
+        #   face data
+        # -----------------------------------------------------
+        X_train = [X[i] for i in train_index]
+        y_train = [y[i] for i in train_index]
+        X_test  = [X[i] for i in test_index]
+        y_test  = [y[i] for i in test_index]
+
+        # -----------------------------------------------------
+        #   eyebrow data
+        # -----------------------------------------------------
+        X2_train = [X2[i] for i in train_index]
+        y2_train = [y2[i] for i in train_index]
+        X2_test  = [X2[i] for i in test_index]
+        y2_test  = [y2[i] for i in test_index]
+
+        # weight destination
+        path_face    = 'SOFTNet_Weights2/Micro/Threshold2' + '/s' + str(subject_count) + '.hdf5'
+        path_eyebrow = 'SOFTNet_Weights2/Micro/Eyebrows' + '/s' + str(subject_count) + '.hdf5'
+
+        # -----------------------------------------------------
+        # TRAINING
+        # -----------------------------------------------------
+        if train:
+            # ======== face network ========
+            print('Training FACE network...')
+            model.set_weights(weight_reset)
+
+            # Downsample 
+            print('Dataset Labels Face', Counter(y_train))
+            unique, uni_count = np.unique(y_train, return_counts=True)
+            rem_count = int(uni_count.max() * 1/2)
+
+            rem_index = random.sample([i for i, t in enumerate(y_train) if t == 0], rem_count)
+            rem_index += (i for i, t in enumerate(y_train) if t > 0)
+            rem_index = sorted(rem_index)
+
             X_train = [X_train[i] for i in rem_index]
             y_train = [y_train[i] for i in rem_index]
-            print('After Downsampling Dataset Labels', Counter(y_train))
-            
-            #Data augmentation to the micro-expression samples only
-            if (expression_type == 'micro-expression'):
+
+            # Augmentation for micro
+            if expression_type == 'micro-expression':
                 X_train, y_train = data_augmentation(X_train, y_train)
-                print('After Augmentation Dataset Labels', Counter(y_train))
-                
-            #Shuffle the training set
+
             X_train, y_train = shuffling(X_train, y_train)
-            model.set_weights(weight_reset) #Reset weights to ensure the model does not have info about current subject
+
             model.fit(
                 generator(X_train, y_train, batch_size, epochs),
-                steps_per_epoch = len(X_train)/batch_size,
+                steps_per_epoch=len(X_train) / batch_size,
                 epochs=epochs,
                 verbose=1,
-                validation_data = generator(X_test, y_test, batch_size),
-                validation_steps = len(X_test)/batch_size,
+                validation_data=generator(X_test, y_test, batch_size),
+                validation_steps=len(X_test) / batch_size,
                 shuffle=True,
             )
+            model.save_weights(path_face)
+            print(f">>> Face Weights Saved: {path_face}")
+
+            # ======== eyebrow network ========
+            print('Training EYEBROW network...')
+            model1.set_weights(weight_reset1)
+
+            print('Dataset Labels Eyebrow', Counter(y2_train))
+            unique, uni_count = np.unique(y2_train, return_counts=True)
+            rem_count = int(uni_count.max() * 1/2)
+
+            rem_index = random.sample([i for i, t in enumerate(y2_train) if t == 0], rem_count)
+            rem_index += (i for i, t in enumerate(y2_train) if t > 0)
+            rem_index = sorted(rem_index)
+
+            X2_train = [X2_train[i] for i in rem_index]
+            y2_train = [y2_train[i] for i in rem_index]
+
+            if expression_type == 'micro-expression':
+                X2_train, y2_train = data_augmentation(X2_train, y2_train)
+
+            X2_train, y2_train = shuffling(X2_train, y2_train)
+
+            model1.fit(
+                generator(X2_train, y2_train, batch_size, epochs),
+                steps_per_epoch=len(X2_train) / batch_size,
+                epochs=epochs,
+                verbose=1,
+                validation_data=generator(X2_test, y2_test, batch_size),
+                validation_steps=len(X2_test) / batch_size,
+                shuffle=True,
+            )
+            model1.save_weights(path_eyebrow)
+            print(f">>> Eyebrow Weights Saved: {path_eyebrow}")
+
         else:
-            model.load_weights(path)  #Load Pretrained Weights
-        
-        result = model.predict_generator(
+            model.load_weights(path_face)
+            model1.load_weights(path_eyebrow)
+            print("Loaded pretrained weights.")
+
+        # -----------------------------------------------------
+        #   TEST → PREDICTION
+        # -----------------------------------------------------
+        print("Predicting FACE network...")
+        result_face = model.predict_generator(
             generator(X_test, y_test, batch_size),
-            steps=len(X_test)/batch_size,
+            steps=len(X_test) / batch_size,
             verbose=1
         )
+
+        print("Predicting EYEBROW network...")
+        result_eyebrow = model1.predict_generator(
+            generator(X2_test, y2_test, batch_size),
+            steps=len(X2_test) / batch_size,
+            verbose=1
+        )
+
+        # -----------------------------------------------------
+        #   Late fusion
+        # -----------------------------------------------------
         
-        preds, gt, total_gt = spotting(result, total_gt, final_samples, subject_count, dataset, k, metric_fn, p, show_plot)
+
+        w_face = 0.7
+        w_eyebrow = 0.3
+        result = w_face * result_face + w_eyebrow * result_eyebrow
+        
+
+        # -----------------------------------------------------
+        #   SPOTTING + EVAL
+        # -----------------------------------------------------
+        preds, gt, total_gt = spotting(
+            result, total_gt, final_samples, final_samples_macro,
+            subject_count, dataset, k, metric_fn, p, show_plot
+        )
+
+        print("macro preds:", preds)
         TP, FP, FN = evaluation(preds, gt, total_gt, metric_fn)
-        
-        print('Done Subject', subject_count)
+        print("Done Subject", subject_count)
+
     return TP, FP, FN, metric_fn
+
 
 def final_evaluation(TP, FP, FN, metric_fn):
     precision = TP/(TP+FP)
@@ -256,32 +467,3 @@ def final_evaluation(TP, FP, FN, metric_fn):
     print("COCO AP@[.5:.95]:", round(metric_fn.value(iou_thresholds=np.round(np.arange(0.5, 1.0, 0.05), 2), mpolicy='soft')['mAP'], 4))
     
     
-# Result if Pre-trained weights are used, slightly different to the research paper
-
-# Final Result for CASME_sq micro-expression
-# TP: 18 FP: 327 FN: 39
-# Precision =  0.0522
-# Recall =  0.3158
-# F1-Score =  0.0896
-# COCO AP@[.5:.95]: 0.0069
-
-# Final Result for CASME_sq macro-expression
-# TP: 91 FP: 348 FN: 209
-# Precision =  0.2073
-# Recall =  0.3033
-# F1-Score =  0.2463
-# COCO AP@[.5:.95]: 0.0175
-
-# Final Result for SAMMLV micro-expression
-# TP: 41 FP: 323 FN: 118
-# Precision =  0.1126
-# Recall =  0.2579
-# F1-Score =  0.1568
-# COCO AP@[.5:.95]: 0.0092
-
-# Final Result for SAMMLV macro-expression
-# TP: 60 FP: 231 FN: 273
-# Precision =  0.2062
-# Recall =  0.1802
-# F1-Score =  0.1923
-# COCO AP@[.5:.95]: 0.0103
