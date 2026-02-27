@@ -1,4 +1,4 @@
-حتماً! من متن شما را در قالب **Markdown مناسب برای فایل `README.md`** فرمت می‌کنم تا هنگام نمایش در گیت‌هاب درست و خوانا باشد، بدون تغییر محتوای اصلی:
+
 
 ```markdown
 # Facial Emotion Temporal Spotting and Recognition in Long Videos
