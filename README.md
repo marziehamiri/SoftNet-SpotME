@@ -341,7 +341,11 @@ The framework provides a strong foundation for:
 
 ---
 
-## Author / Contact
+---
 
-This project and code are authored by **genbing67**.  
-For any questions or correspondence, contact: [genbing67@gmail.com](mailto:genbing67@gmail.com)
+## Author / Credits
+
+This project is based on the original code by **genbing67**  
+Email: [genbing67@gmail.com](mailto:genbing67@gmail.com)  
+
+All modifications and enhancements in this repository were made by the current contributor.
