@@ -342,6 +342,13 @@ The framework provides a strong foundation for:
 ---
 
 ---
+---
+
+## Pretrained Weights
+
+You can download the pretrained model weights from the following link:
+
+🔗 https://drive.google.com/drive/folders/1r8RXZPTUwKui2Q7b0-lKx9oe5q8s6Vvf?usp=drive_link
 
 ## Author / Credits
 
