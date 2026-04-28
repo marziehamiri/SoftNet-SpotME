@@ -34,23 +34,10 @@ We evaluate our approach on the CAS(ME)² dataset, the first publicly available 
 
 ---
 
-### 2. Pseudo-Labeling Strategy
+## Error Reduction Strategies
 
-Since frame-level labels are unavailable, we generate pseudo-labels using a sliding window approach.
-
-**Sliding Window**  
-
-- Window size = k  
-- For each window, compute IoU with ground truth interval:
-
+### 1. Reducing False Positives via IoU Thresholding in Pseudo-Labeling Strategy
 ```
-
-IoU = w ∩ ε / w ∪ ε
-
-```
-
-**Label Function**
-
 Original function:
 
 ```
@@ -59,20 +46,12 @@ G(IoU) = 1 if IoU > 0
 0 otherwise
 
 ```
+change in IoU Threshold:
 
-We improved it by introducing IoU thresholds:
+G(IoU) = 1 if IoU > 0.2
+0 otherwise
 
-- 0.1  
-- 0.2  
-- 0.3  
-
-For short expressions, IoU = 0.2 yielded the best performance.
-
----
-
-## Error Reduction Strategies
-
-### 1. Reducing False Positives via IoU Thresholding in Pseudo-Labeling Strategy
+```
 
 For short expressions:
 
@@ -155,26 +134,6 @@ Fusion improved:
 
 ---
 
-## Evaluation Metrics
-
-We use:
-
-- Precision  
-- Recall  
-- F1-score  
-- TP / FP / FN  
-
-**Definitions**:
-
-```
-
-Precision = TP / (TP + FP)
-Recall = TP / (TP + FN)
-F1 = 2 * (Precision * Recall) / (Precision + Recall)
-
-```
-
----
 
 ## Long Expression Results
 
