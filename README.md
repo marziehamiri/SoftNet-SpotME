@@ -1,10 +1,10 @@
 
 
 ```markdown
-# Facial Expression Spotting and Recognition improvement in Long Videos
+# Facial Expression Spotting improvement in Long Videos
 
 ## Overview
-This project presents a comprehensive framework for temporal spotting and recognition of facial emotions in long video sequences. The system covers all major stages of the pipeline, including:
+This project presents a comprehensive framework for temporal spotting of facial emotions in long video sequences. The system covers all major stages of the pipeline, including:
 
 - Facial landmark detection  
 - Optical flow and optical strain computation  
@@ -30,66 +30,7 @@ The proposed framework improves recall while maintaining balanced precision, par
 We evaluate our approach on the CAS(ME)² dataset, the first publicly available dataset that contains both:
 
 - Short-term expressions (micro-expressions)  
-- Long-term expressions (macro-expressions)  
-
-### Dataset Characteristics
-- 22 subjects  
-- Long video sequences (0.5 to 2 minutes)  
-- 30 FPS  
-- Annotated onset, apex, and offset frames  
-- Labels derived from:
-  - Facial Action Units (AUs)  
-  - Stimulus-induced emotion  
-  - Self-reports from participants  
-
-The dataset enables continuous temporal spotting research in realistic long video settings.
-
----
-
-## Methodology
-
-### 1. Feature Extraction & Preprocessing
-
-**Face Alignment**  
-- Face region detected using 68 facial landmarks  
-- Cropped and resized to 128 × 128 pixels  
-
-**Optical Flow Computation**  
-For each frame i, optical flow is computed between:
-
-```
-
-Frame i and Frame i + k
-
-```
-
-Where:
-
-```
-
-k = 1/2 × average expression length
-
-```
-
-We extract:
-
-- Horizontal optical flow (u)  
-- Vertical optical flow (v)  
-- Optical strain magnitude  
-
-> Optical strain captures subtle deformation changes and is highly sensitive to micro-movements.
-
-**Noise Reduction**  
-- Global head motion removed using nose region reference  
-- Eye regions removed to suppress blinking noise  
-
-**Key regions selected**:  
-
-- Left eye + eyebrow  
-- Right eye + eyebrow  
-- Mouth  
-
-These regions are masked and resized to 42 × 42, then merged into a unified motion representation.
+- Long-term expressions (macro-expressions)
 
 ---
 
@@ -129,66 +70,9 @@ For short expressions, IoU = 0.2 yielded the best performance.
 
 ---
 
-### 3. Three-Stream Shallow CNN (SoftNet)
-
-**Input Streams**:
-
-- Horizontal optical flow  
-- Vertical optical flow  
-- Optical strain magnitude  
-
-**Architecture**:
-
-- Each stream contains one shallow convolution layer (5×5 filters)  
-- Number of filters per stream:
-  - Stream 1: 3 filters  
-  - Stream 2: 5 filters  
-  - Stream 3: 8 filters  
-- Outputs concatenated channel-wise  
-- Then:
-  - Pooling  
-  - Flatten  
-  - Fully connected layer (400 nodes)  
-  - Linear regression output  
-
-> The model outputs a continuous confidence score per frame instead of binary classification.  
-
-**Separate models are trained for**:
-
-- Short expressions  
-- Long expressions  
-
----
-
-### 4. Temporal Peak Detection
-
-**Frame scores are smoothed**:
-
-```
-
-Si = (1 / (2k+1)) ∑(j=i-k to i+k) sj
-
-```
-
-**Threshold**:
-
-```
-
-T = Smean + p * (Smax - Smean)
-
-```
-
-- Best parameters:
-  - Short expressions: p = 0.55  
-  - Long expressions: p = 0.35  
-
-Peaks above threshold define detected emotional intervals.
-
----
-
 ## Error Reduction Strategies
 
-### 1. Reducing False Positives via IoU Thresholding
+### 1. Reducing False Positives via IoU Thresholding in Pseudo-Labeling Strategy
 
 For short expressions:
 
