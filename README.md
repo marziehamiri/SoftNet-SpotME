@@ -3,7 +3,7 @@
 ```markdown
 # Facial Expression Spotting improvement in Long Videos
 
-!(images/improvement.png)
+!(images/improvement.PNG)
 ## Overview
 This project presents a comprehensive framework for temporal spotting of facial emotions in long video sequences. The system covers all major stages of the pipeline, including:
 
