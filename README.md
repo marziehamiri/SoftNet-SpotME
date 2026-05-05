@@ -1,3 +1,4 @@
+````md
 # Facial Expression Spotting improvement in Long Videos
 
 ![improvement](https://raw.githubusercontent.com/marziehamiri/SoftNet-SpotME/main/images/improvement.jpg)
@@ -42,9 +43,154 @@ Original function:
 ```text
 G(IoU) = 1 if IoU > 0
 0 otherwise
-```
-Changed function:
+````
+
+Change in IoU Threshold:
 
 ```text
 G(IoU) = 1 if IoU > 0.2
 0 otherwise
+```
+
+For short expressions:
+
+| IoU | F1     |
+| --- | ------ |
+| 0.0 | 0.1173 |
+| 0.2 | 0.1365 |
+
+**Best threshold:** 0.2
+
+---
+
+### 2. Overlapping Interval Removal (Post-Processing)
+
+If two detected intervals overlap:
+
+* Compute mean confidence of each interval
+* Keep only the one with higher score
+
+After applying:
+
+* False Positives reduced from 264 → 174
+* F1 improved to 0.1594 (~34% error reduction)
+
+---
+
+### 3. Eyebrow-Focused Optical Flow
+
+To improve recall:
+
+* Extract eyebrow landmarks
+* Apply binary mask
+* Compute optical flow only within eyebrow region
+* Train separate eyebrow network
+
+**Results**:
+
+* 9 true positives
+* 7 unique detections not found by face network
+* F1 = 0.0549
+
+Although weaker alone, eyebrow network captures complementary motion information.
+
+---
+
+### 4. Decision Fusion
+
+Two independently trained networks:
+
+* Full face network
+* Eyebrow network
+
+Final prediction:
+
+```text
+Final = w_face * P_face + w_eyebrow * P_eyebrow
+```
+
+**Best weights**:
+
+* Face: 0.7
+* Eyebrow: 0.3
+
+**Results**:
+
+| Model        | F1     | TP | FP  |
+| ------------ | ------ | -- | --- |
+| Face only    | 0.1594 | 20 | 174 |
+| Eyebrow only | 0.0549 | 9  | 262 |
+| Fusion       | 0.1765 | 21 | 160 |
+
+Fusion improved:
+
+* F1 to 0.1765
+* Reduced FP
+* Increased TP
+* ~50% overall improvement compared to baseline
+
+---
+
+## Long Expression Results
+
+For long expressions:
+
+* Baseline F1 = 0.2410
+* IoU thresholding did not improve performance
+* Post-processing not applied
+* No significant improvement observed
+
+This suggests long expressions may require different modeling strategies.
+
+---
+
+## Key Contributions
+
+* Improved pseudo-labeling via IoU threshold tuning
+* Post-processing to remove overlapping intervals
+* Eyebrow-focused motion modeling
+* Weighted fusion strategy
+* Multi-stream shallow CNN architecture
+* Separate modeling for short and long expressions
+
+---
+
+## Conclusion
+
+This project presents a robust multi-stage framework for temporal emotion spotting in long videos.
+
+The combination of:
+
+* Refined pseudo-labeling
+* Optical strain modeling
+* Region-specific motion analysis
+* Decision fusion
+
+significantly improves detection performance for short expressions, particularly in recall enhancement.
+
+The framework provides a strong foundation for:
+
+* Affective computing
+* Human-computer interaction
+* Psychological analysis
+* Behavioral video understanding
+
+---
+
+## Pretrained Weights
+
+You can download the pretrained model weights from the following link:
+
+🔗 [https://drive.google.com/drive/folders/1r8RXZPTUwKui2Q7b0-lKx9oe5q8s6Vvf?usp=drive_link](https://drive.google.com/drive/folders/1r8RXZPTUwKui2Q7b0-lKx9oe5q8s6Vvf?usp=drive_link)
+
+---
+
+## Author / Credits
+
+This project is based on the original code by **genbing67**
+Email: [genbing67@gmail.com](mailto:genbing67@gmail.com)
+
+All modifications and enhancements in this repository were made by the current contributor.
+
+```
+```
