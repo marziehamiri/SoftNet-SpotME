@@ -1,7 +1,7 @@
 
 # Facial Expression Spotting improvement in Long Videos
 
-![improvement](https://raw.githubusercontent.com/marziehamiri/SoftNet-SpotME/main/images/improvement.jpg)
+![improvement](https://raw.githubusercontent.com/marziehamiri/SoftNet-SpotME/main/images/imp.jpg)
 
 ## Overview
 This project presents a comprehensive framework for temporal spotting of facial emotions in long video sequences. The system covers all major stages of the pipeline, including:
