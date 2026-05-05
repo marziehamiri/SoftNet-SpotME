@@ -42,7 +42,7 @@ Original function:
 ```text
 G(IoU) = 1 if IoU > 0
 0 otherwise
-
+```
 Changed function:
 
 ```text
